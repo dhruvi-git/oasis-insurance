@@ -57,6 +57,7 @@ import {
 } from "recharts";
 import { Employee, PayrollSettings, LeaveRequest, ActivityLog, Department } from "./types";
 import { initialSettings, initialEmployees, initialLeaveRequests, initialActivityLogs } from "./mockData";
+import { calculatePayroll } from "./payrollEngine";
 
 export default function Home() {
   // App States
@@ -87,6 +88,15 @@ export default function Home() {
   const [isNewEmployeeModalOpen, setIsNewEmployeeModalOpen] = useState(false);
   const [isPayslipModalOpen, setIsPayslipModalOpen] = useState(false);
   const [payslipEmployeeId, setPayslipEmployeeId] = useState<string | null>(null);
+
+  // Employee portal states
+  const [leaveBalances, setLeaveBalances] = useState({ casual: 4, sick: 6, paid: 12, unpaid: 1 });
+  const [leaveForm, setLeaveForm] = useState({
+    type: "Casual" as "Casual" | "Sick" | "Paid" | "Unpaid",
+    startDate: "",
+    endDate: "",
+    reason: ""
+  });
 
   // Toast System
   const [toasts, setToasts] = useState<{ id: number; message: string; type: "success" | "error" | "info" }[]>([]);
@@ -204,78 +214,32 @@ export default function Home() {
 
   const totalPages = Math.ceil(searchedEmployees.length / itemsPerPage);
 
-  // Dynamic Payroll Calculations
+  // Dynamic Payroll Calculations using the Payroll Engine
   const payrollRegister = useMemo(() => {
     return employees.map((emp) => {
-      const base = emp.baseSalary;
-      const days = settings.baseWorkingDays;
-      const perDay = base / days;
-      
-      const attendanceDeduction = emp.absentDays * perDay;
-      
-      // 3 lates = 1 half day deduction
-      const lateHalfDays = Math.floor(emp.lateDays / 3);
-      const totalHalfDays = emp.halfDays + lateHalfDays;
-      const halfDayDeduction = totalHalfDays * (perDay / 2);
-      
-      // Incentives based on performance score
-      let incentive = 0;
-      if (emp.performanceScore >= 90) {
-        incentive = settings.incentiveBracket90;
-      } else if (emp.performanceScore >= 80) {
-        incentive = settings.incentiveBracket80;
-      } else if (emp.performanceScore >= 70) {
-        incentive = settings.incentiveBracket70;
-      } else {
-        incentive = settings.incentiveBracketUnder70;
-      }
-
-      // Sales Department Leverage Rules
-      if (emp.department === "Sales" && emp.targetAchievement && emp.targetAchievement > 100) {
-        incentive = incentive * (emp.targetAchievement / 100);
-      }
-
-      // Overtime: Base salary per hour = per day / 8 hrs * 1.5 multiplier
-      const otRate = (perDay / 8) * 1.5;
-      const overtimePay = emp.overtimeHours * otRate;
-
-      // Fixed tax deductions
-      const pfDeduction = base * (settings.pfPercentage / 100);
-      const ptDeduction = settings.ptAmount;
-      const tdsDeduction = base * (settings.tdsPercentage / 100);
-
-      const netSalary = Math.round(
-        base -
-        attendanceDeduction -
-        halfDayDeduction -
-        pfDeduction -
-        ptDeduction -
-        tdsDeduction +
-        incentive +
-        (emp.bonus || 0) +
-        overtimePay
-      );
-
-      // Live Pro-Rata Accrual Formula
-      const proRataAccruedSalary = Math.round((netSalary / 26) * Math.min(currentDayOfMonth, 26));
-
+      const res = calculatePayroll(emp, settings, currentDayOfMonth);
       return {
         ...emp,
-        perDay,
-        attendanceDeduction,
-        lateHalfDays,
-        totalHalfDays,
-        halfDayDeduction,
-        incentive,
-        overtimePay,
-        pfDeduction,
-        ptDeduction,
-        tdsDeduction,
-        netSalary,
-        proRataAccruedSalary
+        perDay: res.dailyWageRate,
+        attendanceDeduction: res.attendanceDeduction,
+        lateHalfDays: res.effectiveHalfDaysFromLate,
+        totalHalfDays: res.totalHalfDays,
+        halfDayDeduction: res.halfDayDeduction,
+        incentive: res.scaledIncentive,
+        overtimePay: res.overtimePay,
+        pfDeduction: res.pfDeduction,
+        ptDeduction: res.ptDeduction,
+        tdsDeduction: res.tdsDeduction,
+        netSalary: res.netMonthlySalary,
+        proRataAccruedSalary: res.proRataAccruedSalary
       };
     });
   }, [employees, settings, currentDayOfMonth]);
+
+  // Find Rajesh Kumar (OASIS-001) for the Employee portal view
+  const rajeshRecord = useMemo(() => {
+    return payrollRegister.find(emp => emp.id === "OASIS-001") || null;
+  }, [payrollRegister]);
 
   // Top Performance Leaders
   const leaderboardData = useMemo(() => {
@@ -501,6 +465,90 @@ export default function Home() {
     };
     setActivityLogs(prev => [newLog, ...prev]);
     triggerToast("Global payroll configurations updated successfully", "success");
+  };
+
+  const handleEmployeeLeaveSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const { type, startDate, endDate, reason } = leaveForm;
+
+    if (!startDate || !endDate || !reason.trim()) {
+      triggerToast("Please complete all leave form fields", "error");
+      return;
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const timeDiff = end.getTime() - start.getTime();
+    const days = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+
+    if (days <= 0) {
+      triggerToast("Invalid date range. End date must be after start date", "error");
+      return;
+    }
+
+    const category = type.toLowerCase() as "casual" | "sick" | "paid" | "unpaid";
+    const currentBalance = leaveBalances[category];
+
+    if (currentBalance < days) {
+      triggerToast(`Insufficient ${type} leave balance. Available: ${currentBalance} days`, "error");
+      return;
+    }
+
+    // Deduct from local leaveBalances state
+    setLeaveBalances(prev => ({
+      ...prev,
+      [category]: prev[category] - days
+    }));
+
+    // Update employees record to keep database synced
+    setEmployees(prev => prev.map(emp => {
+      if (emp.id === "OASIS-001") {
+        return {
+          ...emp,
+          leaveBalance: {
+            ...emp.leaveBalance,
+            [category]: emp.leaveBalance[category] - days
+          }
+        };
+      }
+      return emp;
+    }));
+
+    // Append to leaveRequests
+    const newRequest: LeaveRequest = {
+      id: `LR-${Date.now()}`,
+      employeeId: "OASIS-001",
+      employeeName: "Rajesh Kumar",
+      department: "Sales",
+      leaveType: type,
+      startDate,
+      endDate,
+      days,
+      status: "Pending",
+      reason
+    };
+
+    setLeaveRequests(prev => [newRequest, ...prev]);
+
+    // Append to Activity Logs
+    const newLog: ActivityLog = {
+      id: `ACT-${Date.now()}`,
+      user: "Rajesh Kumar",
+      role: "Employee",
+      action: `Submitted leave request for ${days} days of ${type} leave.`,
+      timestamp: new Date().toISOString()
+    };
+    setActivityLogs(prev => [newLog, ...prev]);
+
+    // Reset Form
+    setLeaveForm({
+      type: "Casual",
+      startDate: "",
+      endDate: "",
+      reason: ""
+    });
+
+    triggerToast(`Leave request submitted. ${days} days deducted from ${type} balance.`, "success");
   };
 
   const handleCreateEmployee = (e: React.FormEvent) => {
@@ -1156,7 +1204,337 @@ export default function Home() {
               {/* ========================================================= */}
               {/* TAB 1: EXECUTIVE DASHBOARD                                */}
               {/* ========================================================= */}
-              {currentTab === "Dashboard" && (
+              {currentTab === "Dashboard" && currentRole === "Employee" && (
+                <div className="space-y-6">
+                  {/* Hero greeting */}
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#0B2E4F] p-6 rounded-2xl text-white relative overflow-hidden shadow-lg">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_right,rgba(245,166,35,0.15),transparent)]" />
+                    <div className="relative z-10 flex gap-4 items-center">
+                      <div className="w-16 h-16 rounded-full bg-amber-500 text-[#0B2E4F] font-black text-2xl flex items-center justify-center border-2 border-white shadow-sm overflow-hidden flex-shrink-0">
+                        <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150" alt="" className="w-full h-full object-cover" />
+                      </div>
+                      <div>
+                        <h1 className="text-2xl font-bold tracking-tight">Welcome Back, Rajesh Kumar</h1>
+                        <p className="text-xs text-white/70 mt-1">Sales Manager • Sales division org hierarchy. Supervisor: Sanjay Mehta</p>
+                      </div>
+                    </div>
+                    <div className="relative z-10 flex gap-2">
+                      <span className="px-3 py-1.5 bg-white/10 rounded-xl border border-white/20 text-xs font-semibold flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        My Employee Portal
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Accrued and Sales Metrics Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Live Accrual Card */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl" />
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">MTD Accrued Income (Day {currentDayOfMonth})</span>
+                          <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[8px] font-extrabold rounded-full border border-amber-200">Accruing</span>
+                        </div>
+                        <h3 className="text-3xl font-black text-[#0B2E4F]">₹{rajeshRecord ? rajeshRecord.proRataAccruedSalary.toLocaleString() : "0"}</h3>
+                        
+                        {/* Progress bar */}
+                        <div className="w-full bg-slate-100 rounded-full h-1.5 mt-3 overflow-hidden">
+                          <div className="bg-[#F5A623] h-full rounded-full transition-all duration-350" style={{ width: `${(Math.min(currentDayOfMonth, 26) / 26) * 100}%` }} />
+                        </div>
+                        <div className="flex justify-between text-[9px] text-slate-400 font-bold mt-1.5">
+                          <span>Day 1</span>
+                          <span>Day {currentDayOfMonth} / 26</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="text-[9px] text-slate-400 block font-bold uppercase">Full Month Target</span>
+                          <span className="font-bold text-slate-700">₹{rajeshRecord ? rajeshRecord.netSalary.toLocaleString() : "0"}</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (rajeshRecord) {
+                              setPayslipEmployeeId(rajeshRecord.id);
+                              setIsPayslipModalOpen(true);
+                            }
+                          }}
+                          className="px-3.5 py-1.5 bg-[#0B2E4F] hover:bg-[#164875] text-white rounded-xl text-[10px] font-bold flex items-center gap-1 shadow-sm transition-all"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          View Payslip
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Attendance KPI Card */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attendance Calendar Summary</span>
+                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[8px] font-extrabold rounded-full border border-emerald-200">Active</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center mt-2">
+                          <div className="bg-emerald-50/50 p-2 rounded-xl border border-emerald-100/50">
+                            <span className="text-base font-extrabold text-emerald-700 block">{rajeshRecord ? rajeshRecord.presentDays : 24}</span>
+                            <span className="text-[9px] text-emerald-500 font-bold">Present</span>
+                          </div>
+                          <div className="bg-rose-50/50 p-2 rounded-xl border border-rose-100/50">
+                            <span className="text-base font-extrabold text-rose-700 block">{rajeshRecord ? rajeshRecord.absentDays : 1}</span>
+                            <span className="text-[9px] text-rose-500 font-bold">Absent</span>
+                          </div>
+                          <div className="bg-amber-50/50 p-2 rounded-xl border border-amber-100/50">
+                            <span className="text-base font-extrabold text-amber-700 block">{rajeshRecord ? rajeshRecord.lateDays : 3}</span>
+                            <span className="text-[9px] text-amber-500 font-bold">Lates</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between text-[10px] text-slate-500 font-bold">
+                        <span>Attendance rate: {rajeshRecord ? rajeshRecord.attendancePercentage : 92.3}%</span>
+                        <span>Overtime: {rajeshRecord ? rajeshRecord.overtimeHours : 8} hrs</span>
+                      </div>
+                    </div>
+
+                    {/* Sales Performance Leverage KPI */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sales Leverage Multiplier</span>
+                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[8px] font-extrabold rounded-full border border-indigo-200">Triggered</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center mt-2">
+                          <div className="bg-indigo-50/50 p-2 rounded-xl border border-indigo-100/50">
+                            <span className="text-base font-extrabold text-indigo-700 block">{rajeshRecord?.policiesSold || 18}</span>
+                            <span className="text-[9px] text-indigo-500 font-bold">Policies</span>
+                          </div>
+                          <div className="bg-[#F5A623]/10 p-2 rounded-xl border border-[#F5A623]/20">
+                            <span className="text-base font-extrabold text-amber-700 block">{rajeshRecord?.targetAchievement || 108}%</span>
+                            <span className="text-[9px] text-amber-600 font-bold">Target</span>
+                          </div>
+                          <div className="bg-emerald-50/50 p-2 rounded-xl border border-emerald-100/50">
+                            <span className="text-base font-extrabold text-emerald-700 block">1.08x</span>
+                            <span className="text-[9px] text-emerald-500 font-bold">Multiplier</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between text-[10px] text-slate-500 font-bold">
+                        <span>Total Sales: ₹12.5L Generated</span>
+                        <span className="text-emerald-600">Dynamic Incentive: ₹10,800</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Core Content Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Left: Leave balances & Application desk */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800">My Leave Balance Desk</h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Validates balance quotas before submission routing.</p>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                        <div className="bg-blue-50/50 p-2 rounded-xl border border-blue-100/50">
+                          <span className="font-extrabold text-blue-700 text-base block">{leaveBalances.casual}</span>
+                          <span className="text-[8px] text-blue-500 font-bold">Casual</span>
+                        </div>
+                        <div className="bg-amber-50/50 p-2 rounded-xl border border-amber-100/50">
+                          <span className="font-extrabold text-amber-700 text-base block">{leaveBalances.sick}</span>
+                          <span className="text-[8px] text-amber-500 font-bold">Sick</span>
+                        </div>
+                        <div className="bg-emerald-50/50 p-2 rounded-xl border border-emerald-100/50">
+                          <span className="font-extrabold text-emerald-700 text-base block">{leaveBalances.paid}</span>
+                          <span className="text-[8px] text-emerald-500 font-bold">Paid</span>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                          <span className="font-extrabold text-slate-700 text-base block">{leaveBalances.unpaid}</span>
+                          <span className="text-[8px] text-slate-500 font-bold">Unpaid</span>
+                        </div>
+                      </div>
+
+                      {/* Request leave form */}
+                      <form onSubmit={handleEmployeeLeaveSubmit} className="space-y-3 pt-3 border-t border-slate-100 text-xs">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Apply for Leave</span>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Leave Category</label>
+                          <select
+                            value={leaveForm.type}
+                            onChange={(e) => setLeaveForm(prev => ({ ...prev, type: e.target.value as any }))}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white"
+                          >
+                            <option value="Casual">Casual Leave</option>
+                            <option value="Sick">Sick Leave</option>
+                            <option value="Paid">Earned/Paid Leave</option>
+                            <option value="Unpaid">Loss of Pay (Unpaid)</option>
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Start Date</label>
+                            <input
+                              type="date"
+                              required
+                              value={leaveForm.startDate}
+                              onChange={(e) => setLeaveForm(prev => ({ ...prev, startDate: e.target.value }))}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl font-medium"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">End Date</label>
+                            <input
+                              type="date"
+                              required
+                              value={leaveForm.endDate}
+                              onChange={(e) => setLeaveForm(prev => ({ ...prev, endDate: e.target.value }))}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl font-medium"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Reason / Context Details</label>
+                          <textarea
+                            rows={2}
+                            required
+                            value={leaveForm.reason}
+                            onChange={(e) => setLeaveForm(prev => ({ ...prev, reason: e.target.value }))}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl placeholder-slate-400 text-slate-700 focus:outline-none focus:border-[#0B2E4F]"
+                            placeholder="Reason for requesting leave..."
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="w-full py-2.5 bg-[#F5A623] hover:bg-[#F7B644] text-[#0B2E4F] font-bold rounded-xl text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all"
+                        >
+                          Submit Application
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Middle: Biometric Attendance calendar preview */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800">Biometric Attendance Terminal Calendar</h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Reflects daily check-in marks from biometric terminals.</p>
+                      </div>
+
+                      <div className="grid grid-cols-7 gap-2">
+                        {Array.from({ length: 26 }).map((_, idx) => {
+                          let bg = "bg-emerald-500 text-white";
+                          let tooltip = "Present";
+                          
+                          if (idx < (rajeshRecord ? rajeshRecord.absentDays : 1)) {
+                            bg = "bg-rose-500 text-white";
+                            tooltip = "Absent";
+                          } else if (idx < (rajeshRecord ? rajeshRecord.absentDays + rajeshRecord.lateDays : 4)) {
+                            bg = "bg-amber-500 text-white";
+                            tooltip = "Late arrival check-in";
+                          } else if (idx < (rajeshRecord ? rajeshRecord.absentDays + rajeshRecord.lateDays + rajeshRecord.halfDays : 4)) {
+                            bg = "bg-indigo-500 text-white";
+                            tooltip = "Half day";
+                          }
+
+                          return (
+                            <div
+                              key={idx}
+                              className={`h-9 w-9 rounded-lg flex items-center justify-center text-xs font-extrabold cursor-pointer hover:opacity-85 transition-all ${bg}`}
+                              title={`Day ${idx + 1}: ${tooltip}`}
+                            >
+                              {idx + 1}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex gap-3 text-[9px] font-bold justify-center flex-wrap pt-2">
+                        <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-emerald-500 rounded" /> Present</div>
+                        <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-rose-500 rounded" /> Absent</div>
+                        <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-amber-500 rounded" /> Late Arrival</div>
+                        <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 bg-indigo-500 rounded" /> Half-Day</div>
+                      </div>
+                    </div>
+
+                    {/* Right: Performance radar map & feedback */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800">My Appraisal Mapping</h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Calibrated indicators driving Sales variable multipliers.</p>
+                      </div>
+
+                      <div className="h-44">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RadarChart cx="50%" cy="50%" outerRadius="80%" data={[
+                            { subject: "Target", A: rajeshRecord?.targetAchievement || 108, fullMark: 120 },
+                            { subject: "CSAT", A: (rajeshRecord?.customerSatisfaction || 4.8) * 20, fullMark: 100 },
+                            { subject: "Rating", A: (rajeshRecord?.managerRating || 5) * 20, fullMark: 100 },
+                            { subject: "Attendance", A: rajeshRecord?.attendancePercentage || 92.3, fullMark: 100 },
+                            { subject: "Compliance", A: rajeshRecord?.performanceScore || 94, fullMark: 100 }
+                          ]}>
+                            <PolarGrid stroke="#cbd5e1" />
+                            <PolarAngleAxis dataKey="subject" stroke="#64748b" style={{ fontSize: '9px', fontWeight: 'bold' }} />
+                            <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#cbd5e1" />
+                            <Radar name="Rajesh Kumar" dataKey="A" stroke="#0B2E4F" fill="#0B2E4F" fillOpacity={0.25} />
+                          </RadarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <div className="p-2.5 bg-amber-50 border border-amber-100 rounded-xl text-[10px] text-slate-600 italic">
+                        &ldquo;Exceptional performance this month. Exceeded sales targets and maintained excellent client relations.&rdquo;
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Leave requests historical tracker */}
+                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                      <span className="font-bold text-xs text-slate-700">My Leave Applications History</span>
+                      <span className="text-[10px] text-slate-400">Showing recent application transactions</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50">
+                            <th className="px-6 py-3">Leave Type</th>
+                            <th className="px-6 py-3">Duration</th>
+                            <th className="px-6 py-3">Date Range</th>
+                            <th className="px-6 py-3">Reason for Leave</th>
+                            <th className="px-6 py-3">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {leaveRequests.filter(req => req.employeeId === "OASIS-001").map(req => (
+                            <tr key={req.id} className="hover:bg-slate-50/50">
+                              <td className="px-6 py-3">
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${
+                                  req.leaveType === "Sick" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                  req.leaveType === "Casual" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                  "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                }`}>
+                                  {req.leaveType}
+                                </span>
+                              </td>
+                              <td className="px-6 py-3 font-bold text-slate-600">{req.days} days</td>
+                              <td className="px-6 py-3 font-medium text-slate-500">{req.startDate} to {req.endDate}</td>
+                              <td className="px-6 py-3 text-slate-500 font-medium">{req.reason}</td>
+                              <td className="px-6 py-3">
+                                <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                                  req.status === "Approved" ? "bg-emerald-100 text-emerald-800" :
+                                  req.status === "Rejected" ? "bg-rose-100 text-rose-800" :
+                                  "bg-amber-100 text-amber-800 animate-pulse"
+                                }`}>
+                                  {req.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {currentTab === "Dashboard" && currentRole !== "Employee" && (
                 <div className="space-y-6">
                   {/* Hero Intro */}
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#0B2E4F] p-6 rounded-2xl text-white relative overflow-hidden shadow-lg">

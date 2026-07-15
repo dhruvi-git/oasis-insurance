@@ -15,13 +15,21 @@ An enterprise-grade SaaS payroll and attendance intelligence dashboard built for
 
 ## 🚀 Key Platform Features
 
-### 1. Live Pro-Rata Salary Accumulator Engine
+### 1. High-Fidelity Employee Portal
+*   **Accrued Monthly Salary Card**: Computes pro-rata payout up to the selected day with a timeline progress bar. Clicking "View Payslip" opens the printable ledger slip.
+*   **Leave Balance Desk**: Displays active leave quotas (Casual, Sick, Paid, Unpaid).
+*   **Interactive Leave Application Form**: Validates dates and available balances, dynamically deducts approved counts from the employee's quotas, and appends requests to a scrolling historical registry.
+*   **Sales Performance Audits**: Integrates sales volume cards (policies sold, values generated, target achievements) and renders an interactive performance radar chart.
+*   **Biometric Calendar Preview**: Displays monthly check-in punch cards colored by daily attendance status.
+
+### 2. Decoupled Dynamic Calculation Engine
+*   **Decoupled Logic (`payrollEngine.ts`)**: Base pay rates, attendance penalties, lateness penalties, dynamic Sales division variable incentive scaling, statutory taxes, and pro-rata accrued balances are calculated in a single, pure stateless computation utility, isolating math from UI rendering.
 *   **Accrual Timeline Slider**: A slider located in the header allows administrators to sweep through the current day of the month from Day 1 to Day 26.
 *   **Roster Ticker Display**: Live banner tracking and aggregating the collective accrued payroll liability of all 22+ employees up to the selected day.
 *   **Light-Amber Accrued Column**: A high-visibility column inside the Payroll Register showing the pro-rata earned balance dynamically calculated for each employee.
-*   **accrued vs. Target Breakdown**: Employee drawers and payslips render comparison charts displaying full-month target payout lines side-by-side with accrued pro-rata assets.
+*   **Accrued vs. Target Breakdown**: Employee drawers and payslips render comparison charts displaying full-month target payout lines side-by-side with accrued pro-rata assets.
 
-### 2. Executive Analytics Dashboard
+### 3. Executive Analytics Dashboard
 *   **KPI Grid Summary**: Live animated indicators showing Total Roster, Present Today counters, Late arrivals, Organization Appraisal Average, Monthly Outlays, and Pending Leaves.
 *   **Interactive Data Visualizations (Recharts)**:
     *   *Check-in Punctuality Trend*: Area chart visualizing daily presence and punctuality rates.
@@ -30,7 +38,7 @@ An enterprise-grade SaaS payroll and attendance intelligence dashboard built for
     *   *Late Arrivals Count by Department*: Horizontal bar chart highlighting punctuality hot-spots.
 *   **System Action Stream**: Dynamic audit trail logging spreadsheet uploads, settings overrides, and approval events.
 
-### 3. Employee Directory & Detailed Profiles
+### 4. Employee Directory & Detailed Profiles
 *   **Roster Directory**: Searchable grid datatable with custom filters (department, payroll status), column-sorting (by ID, Base Salary), and responsive pagination.
 *   **Organization Profile Drawers**:
     *   *Personal Card*: Name, email, supervisor, designated role hierarchy, and base salary.
@@ -38,18 +46,18 @@ An enterprise-grade SaaS payroll and attendance intelligence dashboard built for
     *   *Biometric Attendance Calendar*: Monthly grid showing daily status (Green: Present, Red: Absent, Orange: Late, Indigo: Half-Day).
     *   *Performance Radar Chart*: Multi-dimensional analysis mapping target achievements, CSAT ratings, compliance scores, and manager feedback.
 
-### 4. Biometric Attendance & Leave Controller
+### 5. Biometric Attendance & Leave Controller
 *   **File Parsing Simulator**: Drag-and-drop biometric attendance Excel sheet upload simulation featuring loading overlays and automatic calculations.
 *   **Leave Approval Desk**: Inbox displaying active leave requests (Casual, Sick, Paid, Unpaid). Administrative actions (Approve/Reject) dynamically deduct from the employee's respective balances and log audit events.
 
-### 5. Payroll Ledger & Live Calculations
+### 6. Payroll Ledger & Live Calculations
 *   **Dynamic Matrix**: Complete table displaying Base Salary, Deductions, Incentives, and Net take-home payouts.
 *   **In-Line Modifiers**: Modifying an employee's absent days, late marks, appraisal score, or allowances instantly updates their Net Salary on-screen.
 *   **CSV Payroll Register Export**: One-click download of the complete monthly register schema, formatted for standard bank transfers.
 *   **Payslip Generator & PDF Printer**: Generate individual, electronically certified salary slips complete with Earnings Ledgers, Deductions Ledgers, accounting info (PAN, HDFC Bank, PF numbers), and print-ready styles.
 *   **Sales Leverage Metrics**: Integrates badges for `targetAchievement%` and `policiesSold` directly next to Sales profiles. If target performance exceeds 100%, their variable incentive is scaled by the target factor.
 
-### 6. Settings & Calculations Configurations
+### 7. Settings & Calculations Configurations
 *   **Variable Adjustments**: Administrators can alter base working days, PF contribution percentage, Professional Tax caps, and TDS rates.
 *   **Incentive Brackets Override**: Tweaking the performance score brackets immediately updates calculations globally.
 
@@ -62,7 +70,8 @@ An enterprise-grade SaaS payroll and attendance intelligence dashboard built for
 │   ├── app/
 │   │   ├── types.ts          # TypeScript type contracts
 │   │   ├── mockData.ts       # Robust Indian enterprise mock database (22 records)
-│   │   ├── page.tsx          # Central state, views, calculations & modals
+│   │   ├── payrollEngine.ts  # Isolated stateless computation calculations engine
+│   │   ├── page.tsx          # Central state, views, UI layouts & modals
 │   │   ├── globals.css       # Tailwind 4 styles, custom scrollbars, printing rules
 │   │   └── layout.tsx        # HTML wrapper structure and page SEO metadata
 ├── public/

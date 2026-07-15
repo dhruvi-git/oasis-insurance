@@ -478,6 +478,14 @@ export default function Home() {
 
     const start = new Date(startDate);
     const end = new Date(endDate);
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (start < today) {
+      triggerToast("Invalid start date. Cannot request leaves for past dates.", "error");
+      return;
+    }
+
     const timeDiff = end.getTime() - start.getTime();
     const days = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
 
@@ -2871,7 +2879,10 @@ export default function Home() {
                   <span className="font-bold text-xs text-slate-600 uppercase">Verifiable Corporate Payslip Ledger</span>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => window.print()}
+                      onClick={() => {
+                        window.print();
+                        triggerToast("Dispatched payslip ledger to system print spooler.", "success");
+                      }}
                       className="px-3.5 py-1.5 bg-[#0B2E4F] hover:bg-[#164875] text-white text-xs font-bold rounded-lg flex items-center gap-1"
                     >
                       Print Ledger PDF

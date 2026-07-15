@@ -35,6 +35,7 @@ export interface Employee {
   performanceScore: number; // 0 - 100
   salesGenerated?: number; // for Sales dept
   targetAchievement?: number; // %
+  policiesSold?: number; // for Sales dept policy volume
   customerSatisfaction?: number; // score out of 5
   managerRating?: number; // score out of 5
   feedback?: string;

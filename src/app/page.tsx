@@ -73,6 +73,7 @@ export default function Home() {
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(initialActivityLogs);
 
   // Shell States
+  const [currentDayOfMonth, setCurrentDayOfMonth] = useState<number>(15);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentTab, setCurrentTab] = useState<"Dashboard" | "Employees" | "Attendance" | "Performance" | "Payroll" | "Settings">("Dashboard");
   const [currentRole, setCurrentRole] = useState<"Super Admin" | "HR" | "Dept Head" | "Employee">("Super Admin");
@@ -229,6 +230,11 @@ export default function Home() {
         incentive = settings.incentiveBracketUnder70;
       }
 
+      // Sales Department Leverage Rules
+      if (emp.department === "Sales" && emp.targetAchievement && emp.targetAchievement > 100) {
+        incentive = incentive * (emp.targetAchievement / 100);
+      }
+
       // Overtime: Base salary per hour = per day / 8 hrs * 1.5 multiplier
       const otRate = (perDay / 8) * 1.5;
       const overtimePay = emp.overtimeHours * otRate;
@@ -250,6 +256,9 @@ export default function Home() {
         overtimePay
       );
 
+      // Live Pro-Rata Accrual Formula
+      const proRataAccruedSalary = Math.round((netSalary / 26) * Math.min(currentDayOfMonth, 26));
+
       return {
         ...emp,
         perDay,
@@ -262,10 +271,11 @@ export default function Home() {
         pfDeduction,
         ptDeduction,
         tdsDeduction,
-        netSalary
+        netSalary,
+        proRataAccruedSalary
       };
     });
-  }, [employees, settings]);
+  }, [employees, settings, currentDayOfMonth]);
 
   // Top Performance Leaders
   const leaderboardData = useMemo(() => {
@@ -357,6 +367,7 @@ export default function Home() {
     const presentToday = Math.round(totalCount * 0.92);
     const averageScore = Math.round(employees.reduce((acc, curr) => acc + curr.performanceScore, 0) / totalCount);
     const totalPayrollVal = payrollRegister.reduce((acc, curr) => acc + curr.netSalary, 0);
+    const totalAccruedLiability = payrollRegister.reduce((acc, curr) => acc + curr.proRataAccruedSalary, 0);
     const lateToday = employees.filter(emp => emp.lateDays > 3).length;
     const pendingLeaves = leaveRequests.filter(lr => lr.status === "Pending").length;
 
@@ -366,6 +377,7 @@ export default function Home() {
       lateToday,
       averageScore,
       totalPayrollVal,
+      totalAccruedLiability,
       pendingLeaves
     };
   }, [employees, payrollRegister, leaveRequests]);
@@ -942,6 +954,29 @@ export default function Home() {
                       Clear
                     </button>
                   )}
+                </div>
+              </div>
+
+              {/* Pro-Rata Accumulator Timeline Controller */}
+              <div className="hidden md:flex items-center gap-4 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-1.5 mx-4 flex-1 max-w-sm lg:max-w-md">
+                <div className="flex flex-col flex-shrink-0">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Accrual Timeline</span>
+                  <span className="text-xs font-bold text-[#0B2E4F]">Day {currentDayOfMonth} of 26</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="26"
+                  value={currentDayOfMonth}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setCurrentDayOfMonth(val);
+                  }}
+                  className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#F5A623]"
+                />
+                <div className="flex flex-col text-right flex-shrink-0 border-l border-slate-200 pl-4">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Accrued Liability</span>
+                  <span className="text-xs font-extrabold text-amber-600">₹{kpiData.totalAccruedLiability.toLocaleString()}</span>
                 </div>
               </div>
 
@@ -1892,6 +1927,7 @@ export default function Home() {
                             <th className="px-4 py-3 text-right">PF (-12%)</th>
                             <th className="px-4 py-3 text-right">TDS (-10%)</th>
                             <th className="px-4 py-3 text-right text-indigo-700 bg-indigo-50/50">Net Salary</th>
+                            <th className="px-4 py-3 text-right text-amber-700 bg-amber-50">Accrued Earned (Day {currentDayOfMonth})</th>
                             <th className="px-4 py-3 text-center">Payslip</th>
                           </tr>
                         </thead>
@@ -1905,7 +1941,19 @@ export default function Home() {
                                   <img src={emp.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
                                   <div>
                                     <span className="font-bold text-slate-800 block">{emp.name}</span>
-                                    <span className="text-[9px] text-slate-400 block">{emp.id} • {emp.department}</span>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-[9px] text-slate-400 block">{emp.id} • {emp.department}</span>
+                                      {emp.department === "Sales" && (
+                                        <>
+                                          <span className="px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 text-[8px] font-extrabold rounded">
+                                            Tgt: {emp.targetAchievement}%
+                                          </span>
+                                          <span className="px-1.5 py-0.5 bg-blue-50 border border-blue-200 text-blue-700 text-[8px] font-extrabold rounded">
+                                            Pol: {emp.policiesSold}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </td>
@@ -1976,6 +2024,9 @@ export default function Home() {
 
                               {/* Net Salary calculated */}
                               <td className="px-4 py-3 text-right font-extrabold text-indigo-800 bg-indigo-50/20">₹{emp.netSalary.toLocaleString()}</td>
+
+                              {/* Accrued Earned (Day X) */}
+                              <td className="px-4 py-3 text-right font-extrabold text-amber-850 bg-amber-50 border-l border-amber-100">₹{emp.proRataAccruedSalary.toLocaleString()}</td>
 
                               {/* Payslip utility */}
                               <td className="px-4 py-3 text-center">
@@ -2189,6 +2240,24 @@ export default function Home() {
                       <span className="font-semibold text-xs truncate block">{activeEmployeeDetail.orgHierarchy.manager}</span>
                     </div>
                   </div>
+
+                  {/* Pro-Rata Accrual Comparer for activeEmployeeDetail */}
+                  {(() => {
+                    const registerRecord = payrollRegister.find(r => r.id === activeEmployeeDetail.id);
+                    if (!registerRecord) return null;
+                    return (
+                      <div className="bg-amber-50 border border-amber-200/70 rounded-xl p-4 shadow-sm flex justify-between items-center text-xs">
+                        <div>
+                          <span className="font-extrabold text-amber-800 uppercase block tracking-wider text-[9px]">Accrued Income (Day {currentDayOfMonth})</span>
+                          <span className="text-[9px] text-slate-500 font-medium">Includes pro-rata shares & performance calibrations</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-black text-amber-900 text-sm block">₹{registerRecord.proRataAccruedSalary.toLocaleString()}</span>
+                          <span className="text-[9px] text-slate-400 block font-bold">Full Month: ₹{registerRecord.netSalary.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Leave balance list */}
                   <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
@@ -2580,10 +2649,28 @@ export default function Home() {
 
                   </div>
 
+                  {/* Pro-Rata Accrual Comparison Ledger */}
+                  <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4 text-amber-900">
+                    <div>
+                      <h4 className="font-extrabold text-xs uppercase tracking-wide text-amber-800">Pro-Rata Accrual Summary</h4>
+                      <p className="text-[10px] text-amber-700/85 mt-0.5">Accrued up to Day {currentDayOfMonth} of the 26-day working month cycle.</p>
+                    </div>
+                    <div className="flex gap-6 items-center">
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold text-slate-500 block uppercase">Full Month Target</span>
+                        <span className="text-sm font-bold text-slate-700">₹{activePayslipDetail.netSalary.toLocaleString()}</span>
+                      </div>
+                      <div className="text-right border-l border-amber-200 pl-6">
+                        <span className="text-[10px] font-extrabold text-amber-850 block uppercase">Accrued Balance Asset</span>
+                        <span className="text-lg font-black text-amber-900">₹{activePayslipDetail.proRataAccruedSalary.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Net breakdown block */}
                   <div className="bg-[#0B2E4F] text-white p-5 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4">
                     <div>
-                      <h3 className="font-bold text-xs uppercase tracking-wider text-white/70">Take Home Net Payout</h3>
+                      <h3 className="font-bold text-xs uppercase tracking-wider text-white/70">Take Home Net Payout (Full Month)</h3>
                       <p className="text-[10px] text-white/50 mt-0.5">Formula: Base Salary - Deductions + Additions</p>
                     </div>
                     <div className="text-center md:text-right">

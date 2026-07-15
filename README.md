@@ -13,6 +13,41 @@ An enterprise-grade SaaS payroll and attendance intelligence dashboard built for
 
 ---
 
+## 🚀 Key Platform Features
+
+### 1. Executive Analytics Dashboard
+*   **KPI Grid Summary**: Live animated indicators showing Total Roster, Present Today counters, Late arrivals, Organization Appraisal Average, Monthly Outlays, and Pending Leaves.
+*   **Interactive Data Visualizations (Recharts)**:
+    *   *Check-in Punctuality Trend*: Area chart visualizing daily presence and punctuality rates.
+    *   *Compensation Expense by Division*: Dual-color bar chart comparing total salary outlay by department.
+    *   *Compensation Bracket Allocation*: Radial donut chart analyzing employee counts across wage categories.
+    *   *Late Arrivals Count by Department*: Horizontal bar chart highlighting punctuality hot-spots.
+*   **System Action Stream**: Dynamic audit trail logging spreadsheet uploads, settings overrides, and approval events.
+
+### 2. Employee Directory & Detailed Profiles
+*   **Roster Directory**: Searchable grid datatable with custom filters (department, payroll status), column-sorting (by ID, Base Salary), and responsive pagination.
+*   **Organization Profile Drawers**:
+    *   *Personal Card*: Name, email, supervisor, designated role hierarchy, and base salary.
+    *   *Leave Balance Tracker*: Interactive status cards indicating Casual, Sick, Paid, and Unpaid balances.
+    *   *Biometric Attendance Calendar*: Monthly grid showing daily status (Green: Present, Red: Absent, Orange: Late, Indigo: Half-Day).
+    *   *Performance Radar Chart*: Multi-dimensional analysis mapping target achievements, CSAT ratings, compliance scores, and manager feedback.
+
+### 3. Biometric Attendance & Leave Controller
+*   **File Parsing Simulator**: Drag-and-drop biometric attendance Excel sheet upload simulation featuring loading overlays and automatic calculations.
+*   **Leave Approval Desk**: Inbox displaying active leave requests (Casual, Sick, Paid, Unpaid). Administrative actions (Approve/Reject) dynamically deduct from the employee's respective balances and log audit events.
+
+### 4. Payroll Ledger & Live Calculations
+*   **Dynamic Matrix**: Complete table displaying Base Salary, Deductions, Incentives, and Net take-home payouts.
+*   **In-Line Modifiers**: Modifying an employee's absent days, late marks, appraisal score, or allowances instantly updates their Net Salary on-screen.
+*   **CSV Payroll Register Export**: One-click download of the complete monthly register schema, formatted for standard bank transfers.
+*   **Payslip Generator & PDF Printer**: Generate individual, electronically certified salary slips complete with Earnings Ledgers, Deductions Ledgers, accounting info (PAN, HDFC Bank, PF numbers), and print-ready styles.
+
+### 5. Settings & Calculations Configurations
+*   **Variable Adjustments**: Administrators can alter base working days, PF contribution percentage, Professional Tax caps, and TDS rates.
+*   **Incentive Brackets Override**: Tweaking the performance score brackets immediately updates calculations globally.
+
+---
+
 ## 📂 Project Architecture
 
 ```
@@ -54,7 +89,7 @@ $$\text{Net Salary} = \text{Base Salary} - \text{Attendance Deduction} - \text{L
 - **Late Deduction Rule**: Every 3 late check-ins count as 1 half-day deduction.
 - **Half-Day Deduction**: $\text{Half-Days} \times \frac{\text{Daily Wage Rate}}{2}$.
 - **Performance Incentives**:
-  - Score $\ge 90$: $+₹10,000$
+  - Score &ge; 90: $+₹10,000$
   - Score $80 - 89$: $+₹7,000$
   - Score $70 - 79$: $+₹5,000$
   - Score $< 70$: $+₹2,000$
